@@ -3,57 +3,35 @@ package com.sport.repository.interfaces;
 import com.sport.domain.Player;
 import java.util.List;
 
-/**
- * Player-specific repository interface.
- * Extends generic CrudRepository and adds player-specific operations.
- */
-public interface PlayerRepository extends CrudRepository<Player, Long> {
-    
+public interface PlayerRepository extends CrudRepository<Player, Integer> {
+
     /**
-     * Finds players by team ID.
-     * 
-     * @param teamId the team ID
-     * @return list of players in this team
+     * Найти игроков по ID команды.
      */
-    List<Player> findByTeamId(Long teamId);
-    
+    List<Player> findByTeamId(Integer teamId);
+
     /**
-     * Finds players by position.
-     * 
-     * @param position the position (e.g., "Forward", "Guard")
-     * @return list of players in this position
+     * Найти игроков по позиции.
      */
     List<Player> findByPosition(String position);
-    
+
     /**
-     * Finds players with rating above specified value.
-     * 
-     * @param minRating minimum rating
-     * @return list of players with rating >= minRating
+     * Найти игроков с рейтингом выше указанного.
      */
     List<Player> findByRatingGreaterThan(Double minRating);
-    
+
     /**
-     * Finds players by age range.
-     * 
-     * @param minAge minimum age
-     * @param maxAge maximum age
-     * @return list of players in age range
+     * Найти игроков в диапазоне возраста.
      */
     List<Player> findByAgeBetween(Integer minAge, Integer maxAge);
-    
+
     /**
-     * Searches players by name (partial match on first or last name).
-     * 
-     * @param namePart part of the name
-     * @return list of matching players
+     * Поиск по имени или фамилии (частичное совпадение).
      */
     List<Player> searchByName(String namePart);
-    
+
     /**
-     * Finds all free agents (players without a team).
-     * 
-     * @return list of free agent players
+     * Найти свободных агентов (без команды).
      */
     List<Player> findFreeAgents();
 }

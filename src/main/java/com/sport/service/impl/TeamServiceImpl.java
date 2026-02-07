@@ -16,25 +16,24 @@ import java.util.stream.Collectors;
  * Uses Lambda expressions and Streams for in-memory data processing.
  */
 public class TeamServiceImpl implements TeamService {
-    
-    // DIP: Service depends on Repository interface, not implementation
+
     private final TeamRepository teamRepository;
-    
-    // In-memory data pool for demonstration
+
+    // In-memory data pool for demonstration (Requirement #3)
     private final List<Team> teamDataPool;
-    
+
     public TeamServiceImpl(TeamRepository teamRepository) {
         this.teamRepository = teamRepository;
         this.teamDataPool = new ArrayList<>();
         // Load initial data into memory pool
         refreshDataPool();
     }
-    
+
     private void refreshDataPool() {
         teamDataPool.clear();
         teamDataPool.addAll(teamRepository.findAll());
     }
-    
+
     @Override
     public Team createTeam(Team team) {
         validateTeam(team);
@@ -42,67 +41,63 @@ public class TeamServiceImpl implements TeamService {
         refreshDataPool();
         return saved;
     }
-    
+
     @Override
-    public Team getTeamById(Long id) {
+    public Team getTeamById(Integer id) { // Используем Integer
         return teamRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Team", id));
     }
-    
+
     @Override
     public List<Team> getAllTeams() {
         return new ArrayList<>(teamDataPool);
     }
-    
+
     @Override
     public Team updateTeam(Team team) {
         validateTeam(team);
-        if (team.getId() == null) {
-            throw new ValidationException("Team", "Team ID cannot be null for update");
+        // Исправлено: для int проверяем на 0, а не на null
+        if (team.getId() == 0) {
+            throw new ValidationException("Team", "Team ID cannot be 0 for update");
         }
         Team updated = teamRepository.update(team);
         refreshDataPool();
         return updated;
     }
-    
+
     @Override
-    public boolean deleteTeam(Long id) {
-        boolean deleted = teamRepository.deleteById(id);
-        if (deleted) {
-            refreshDataPool();
+    public void deleteTeam(Integer id) { // void и Integer
+        if (!teamRepository.deleteById(id)) {
+            throw new EntityNotFoundException("Team", id);
         }
-        return deleted;
+        refreshDataPool();
     }
-    
+
     @Override
     public List<Team> getTeamsBySport(String sport) {
-        // Using Lambda expression to filter in memory
         return teamDataPool.stream()
                 .filter(team -> team.getSport().equalsIgnoreCase(sport))
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public List<Team> getTeamsByLocation(String location) {
-        // Using Lambda expression
         return teamDataPool.stream()
                 .filter(team -> team.getLocation().toLowerCase().contains(location.toLowerCase()))
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public List<Team> filterTeams(Predicate<Team> predicate) {
-        // Accepts any custom predicate (Lambda) for flexible filtering
         return teamDataPool.stream()
                 .filter(predicate)
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public List<Team> sortTeams(String sortBy, boolean ascending) {
-        // Using Lambda expressions for dynamic sorting
         Comparator<Team> comparator;
-        
+
         switch (sortBy.toLowerCase()) {
             case "name":
                 comparator = Comparator.comparing(Team::getName, String.CASE_INSENSITIVE_ORDER);
@@ -117,70 +112,60 @@ public class TeamServiceImpl implements TeamService {
                 comparator = Comparator.comparing(Team::getLocation, String.CASE_INSENSITIVE_ORDER);
                 break;
             case "foundedyear":
-                comparator = Comparator.comparing(Team::getFoundedYear, 
-                    Comparator.nullsLast(Comparator.naturalOrder()));
+                // Исправлено: foundedYear это примитив int
+                comparator = Comparator.comparingInt(Team::getFoundedYear);
                 break;
             default:
-                comparator = Comparator.comparing(Team::getId);
+                comparator = Comparator.comparingInt(Team::getId);
         }
-        
+
         if (!ascending) {
             comparator = comparator.reversed();
         }
-        
+
         return teamDataPool.stream()
                 .sorted(comparator)
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public Map<String, Object> getTeamStatistics() {
         Map<String, Object> stats = new HashMap<>();
-        
-        // Total count
+
         long totalTeams = teamDataPool.size();
         stats.put("totalTeams", totalTeams);
-        
-        // Teams by sport using groupingBy with Lambda
+
         Map<String, Long> teamsBySport = teamDataPool.stream()
-                .collect(Collectors.groupingBy(
-                        Team::getSport, 
-                        Collectors.counting()
-                ));
+                .collect(Collectors.groupingBy(Team::getSport, Collectors.counting()));
         stats.put("teamsBySport", teamsBySport);
-        
-        // Teams by location
+
         Map<String, Long> teamsByLocation = teamDataPool.stream()
-                .collect(Collectors.groupingBy(
-                        Team::getLocation, 
-                        Collectors.counting()
-                ));
+                .collect(Collectors.groupingBy(Team::getLocation, Collectors.counting()));
         stats.put("teamsByLocation", teamsByLocation);
-        
-        // Average founded year
+
+        // Исправлено: проверяем != 0 для примитива int
         OptionalDouble avgFoundedYear = teamDataPool.stream()
-                .filter(team -> team.getFoundedYear() != null)
+                .filter(team -> team.getFoundedYear() != 0)
                 .mapToInt(Team::getFoundedYear)
                 .average();
         stats.put("averageFoundedYear", avgFoundedYear.orElse(0.0));
-        
-        // Oldest team
+
         teamDataPool.stream()
-                .filter(team -> team.getFoundedYear() != null)
-                .min(Comparator.comparing(Team::getFoundedYear))
+                .filter(team -> team.getFoundedYear() != 0)
+                .min(Comparator.comparingInt(Team::getFoundedYear))
                 .ifPresent(team -> stats.put("oldestTeam", team.getName()));
-        
+
         return stats;
     }
-    
+
     @Override
     public long countTeams() {
         return teamRepository.count();
     }
-    
+
     private void validateTeam(Team team) {
         List<String> errors = new ArrayList<>();
-        
+
         if (team.getName() == null || team.getName().trim().isEmpty()) {
             errors.add("Team name is required");
         }
@@ -193,7 +178,7 @@ public class TeamServiceImpl implements TeamService {
         if (team.getLocation() == null || team.getLocation().trim().isEmpty()) {
             errors.add("Location is required");
         }
-        
+
         if (!errors.isEmpty()) {
             throw new ValidationException("Team", errors);
         }

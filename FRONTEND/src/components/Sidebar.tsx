@@ -128,7 +128,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
           
           {/* Version info */}
           <div className="mt-4 px-4 text-xs text-white/20">
-            v1.0.0 • Build 2024
+            Prod by Alan
           </div>
         </motion.div>
       </div>

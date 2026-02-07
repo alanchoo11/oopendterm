@@ -1,43 +1,216 @@
-import { motion } from 'framer-motion';
-import { 
-  Trophy, 
-  MapPin, 
-  User, 
-  Calendar, 
-  MoreHorizontal, 
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Trophy,
+  MapPin,
+  User,
+  Calendar,
+  MoreHorizontal,
   Plus,
   Search,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  Loader2,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { Team } from '@/types';
-import { mockTeams } from '@/services/api';
-import { useState } from 'react';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-interface TeamsProps {
-  teams?: Team[];
+// --- Types ---
+interface Team {
+  id: number;
+  name: string;
+  sport: string;
+  coach: string;
+  location: string;
+  foundedYear: number;
 }
 
-export function Teams({ teams = mockTeams }: TeamsProps) {
+export function Teams() {
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // UI State
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<keyof Team>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const filteredTeams = teams.filter(team =>
-    team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    team.sport.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    team.coach.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    team.location.toLowerCase().includes(searchQuery.toLowerCase())
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '', sport: '', coach: '', location: '', foundedYear: ''
+  });
+
+  // --- 1. READ (Load Data) ---
+  useEffect(() => {
+    fetchTeams();
+  }, []);
+
+  const fetchTeams = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('http://localhost:8080/api/teams');
+
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+      const jsonResponse = await response.json();
+
+      // Распаковка данных с защитой
+      let safeTeams = [];
+      if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
+        safeTeams = jsonResponse.data;
+      } else if (Array.isArray(jsonResponse)) {
+        safeTeams = jsonResponse;
+      }
+      setTeams(safeTeams);
+
+    } catch (err: any) {
+      console.error("Load error:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 2. CREATE & UPDATE ---
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const payload = {
+        name: formData.name,
+        sport: formData.sport,
+        coach: formData.coach,
+        location: formData.location,
+        foundedYear: parseInt(formData.foundedYear) || 2024
+      };
+
+      let url = 'http://localhost:8080/api/teams';
+      let method = 'POST';
+
+      // Если есть ID, значит это редактирование (UPDATE)
+      if (editingId) {
+        url = `http://localhost:8080/api/teams/${editingId}`;
+        method = 'PUT';
+      }
+
+      const response = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const jsonResponse = await response.json();
+        const savedTeam = jsonResponse.data || jsonResponse;
+
+        if (savedTeam && savedTeam.id) {
+          if (editingId) {
+            // UPDATE: Обновляем команду в списке
+            setTeams(prev => prev.map(t => t.id === editingId ? savedTeam : t));
+          } else {
+            // CREATE: Добавляем новую
+            setTeams(prev => [...prev, savedTeam]);
+          }
+          closeModal();
+        }
+      } else {
+        alert("Error saving team");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Network error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- 3. DELETE ---
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("Delete this team? All players in this team will become Free Agents.")) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/api/teams/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setTeams(prev => prev.filter(t => t.id !== id));
+      } else {
+        alert("Failed to delete team");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+    }
+  };
+
+  // --- Helpers ---
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormData({ name: '', sport: '', coach: '', location: '', foundedYear: '' });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (team: Team) => {
+    setEditingId(team.id);
+    setFormData({
+      name: team.name,
+      sport: team.sport,
+      coach: team.coach,
+      location: team.location,
+      foundedYear: team.foundedYear.toString()
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+  };
+
+  const getSportColor = (sport: string) => {
+    const s = (sport || '').toLowerCase();
+    if (s.includes('football') || s.includes('soccer')) return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+    if (s.includes('basketball')) return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+    if (s.includes('baseball')) return 'bg-green-500/10 text-green-500 border-green-500/20';
+    return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+  };
+
+  // --- Sorting & Filtering ---
+  const safeTeams = Array.isArray(teams) ? teams : [];
+
+  const filteredTeams = safeTeams.filter(team =>
+      (team.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (team.sport || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (team.location || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const sortedTeams = [...filteredTeams].sort((a, b) => {
     const aValue = a[sortField];
     const bValue = b[sortField];
-    if (aValue === undefined || bValue === undefined) return 0;
-    
-    const comparison = String(aValue).localeCompare(String(bValue));
+    const comparison = String(aValue || '').localeCompare(String(bValue || ''), undefined, { numeric: true });
     return sortDirection === 'asc' ? comparison : -comparison;
   });
 
@@ -50,218 +223,195 @@ export function Teams({ teams = mockTeams }: TeamsProps) {
     }
   };
 
-  const sportColors: Record<string, string> = {
-    Football: 'from-blue-500 to-cyan-500',
-    Basketball: 'from-orange-500 to-red-500',
-    Baseball: 'from-green-500 to-emerald-500',
-  };
+  if (error) return <div className="p-10 text-red-500">Error: {error}</div>;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="space-y-6 p-8"
-    >
-      {/* Header Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+      <div className="space-y-6 p-6">
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              type="text"
-              placeholder="Search teams..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-80 pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/30 
-                         focus:border-neon-blue/50 rounded-xl"
+                placeholder="Search teams..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-background/50 border-white/10 text-white placeholder:text-white/40"
             />
           </div>
-          <Button
-            variant="outline"
-            className="border-white/10 text-white/70 hover:bg-white/5 hover:text-white rounded-xl"
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            Filter
-          </Button>
-        </div>
-        
-        <Button className="bg-neon-blue hover:bg-neon-blue/90 text-white rounded-xl shadow-glow">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Team
-        </Button>
-      </div>
 
-      {/* Teams Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="glass-card rounded-2xl overflow-hidden"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/5">
-                <th className="text-left py-4 px-6">
-                  <button
-                    onClick={() => handleSort('name')}
-                    className="flex items-center gap-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                  >
-                    Team Name
-                    <ArrowUpDown className="w-3 h-3" />
-                  </button>
-                </th>
-                <th className="text-left py-4 px-6">
-                  <button
-                    onClick={() => handleSort('sport')}
-                    className="flex items-center gap-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                  >
-                    Sport
-                    <ArrowUpDown className="w-3 h-3" />
-                  </button>
-                </th>
-                <th className="text-left py-4 px-6">
-                  <button
-                    onClick={() => handleSort('coach')}
-                    className="flex items-center gap-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                  >
-                    Coach
-                    <ArrowUpDown className="w-3 h-3" />
-                  </button>
-                </th>
-                <th className="text-left py-4 px-6">
-                  <button
-                    onClick={() => handleSort('location')}
-                    className="flex items-center gap-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                  >
-                    Location
-                    <ArrowUpDown className="w-3 h-3" />
-                  </button>
-                </th>
-                <th className="text-left py-4 px-6">
-                  <span className="text-sm font-medium text-white/60">Founded</span>
-                </th>
-                <th className="text-right py-4 px-6">
-                  <span className="text-sm font-medium text-white/60">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedTeams.map((team, index) => (
-                <motion.tr
-                  key={team.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: 0.3 + index * 0.05 }}
-                  className="border-b border-white/5 table-row-hover group"
-                >
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-4">
-                      <div className={`
-                        w-10 h-10 rounded-xl bg-gradient-to-br ${sportColors[team.sport] || 'from-gray-500 to-gray-600'}
-                        flex items-center justify-center shadow-lg
-                      `}>
-                        <Trophy className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-white group-hover:text-neon-blue transition-colors">
-                          {team.name}
-                        </p>
-                        <p className="text-sm text-white/40">ID: #{team.id}</p>
-                      </div>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" className="gap-2 border-white/10 hover:bg-white/5 text-white">
+              <Filter className="w-4 h-4" />
+              Filter
+            </Button>
+
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={openAddModal} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                  <Plus className="w-4 h-4" />
+                  Add Team
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px] bg-[#1a1b1e] border-white/10 text-white">
+                <DialogHeader>
+                  <DialogTitle>{editingId ? "Edit Team" : "Add New Team"}</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSave} className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label>Team Name</Label>
+                    <Input
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        className="bg-black/20 border-white/10" required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Sport</Label>
+                    <Input
+                        value={formData.sport}
+                        onChange={(e) => setFormData({...formData, sport: e.target.value})}
+                        className="bg-black/20 border-white/10" placeholder="e.g. Football" required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Coach</Label>
+                    <Input
+                        value={formData.coach}
+                        onChange={(e) => setFormData({...formData, coach: e.target.value})}
+                        className="bg-black/20 border-white/10" required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Location</Label>
+                      <Input
+                          value={formData.location}
+                          onChange={(e) => setFormData({...formData, location: e.target.value})}
+                          className="bg-black/20 border-white/10" required
+                      />
                     </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className={`
-                      px-3 py-1 rounded-full text-xs font-medium
-                      ${team.sport === 'Football' ? 'bg-blue-500/20 text-blue-400' :
-                        team.sport === 'Basketball' ? 'bg-orange-500/20 text-orange-400' :
-                        team.sport === 'Baseball' ? 'bg-green-500/20 text-green-400' :
-                        'bg-white/10 text-white/60'}
-                    `}>
-                      {team.sport}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-white/40" />
-                      <span className="text-white/80">{team.coach}</span>
+                    <div className="grid gap-2">
+                      <Label>Founded</Label>
+                      <Input
+                          type="number"
+                          value={formData.foundedYear}
+                          onChange={(e) => setFormData({...formData, foundedYear: e.target.value})}
+                          className="bg-black/20 border-white/10" required
+                      />
                     </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-white/40" />
-                      <span className="text-white/80">{team.location}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-white/40" />
-                      <span className="text-white/80">{team.foundedYear || 'N/A'}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-white/40 hover:text-white hover:bg-white/5"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
+                  </div>
+                  <DialogFooter className="mt-4">
+                    <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 w-full text-white">
+                      {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                      {editingId ? "Update Team" : "Save Team"}
                     </Button>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        {/* Pagination */}
-        <div className="flex items-center justify-between py-4 px-6 border-t border-white/5">
-          <p className="text-sm text-white/40">
-            Showing {sortedTeams.length} of {teams.length} teams
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 text-white/60 hover:bg-white/5 hover:text-white"
-              disabled
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 text-white/60 hover:bg-white/5 hover:text-white"
-              disabled
-            >
-              Next
-            </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
-      </motion.div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Teams', value: teams.length, color: 'blue' },
-          { label: 'Football', value: teams.filter(t => t.sport === 'Football').length, color: 'green' },
-          { label: 'Basketball', value: teams.filter(t => t.sport === 'Basketball').length, color: 'orange' },
-          { label: 'Baseball', value: teams.filter(t => t.sport === 'Baseball').length, color: 'purple' },
-        ].map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.5 + index * 0.1 }}
-            className="glass-card rounded-xl p-4"
-          >
-            <p className="text-sm text-white/50">{stat.label}</p>
-            <p className={`text-2xl font-bold text-${stat.color}-400`}>{stat.value}</p>
-          </motion.div>
-        ))}
+        {/* TABLE */}
+        <div className="rounded-xl border border-white/10 bg-black/20 overflow-hidden backdrop-blur-sm shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-gray-300">
+              <thead className="text-xs uppercase bg-white/5 text-muted-foreground border-b border-white/5">
+              <tr>
+                {[
+                  { key: 'name', label: 'Team Name' },
+                  { key: 'sport', label: 'Sport' },
+                  { key: 'coach', label: 'Coach' },
+                  { key: 'location', label: 'Location' },
+                  { key: 'foundedYear', label: 'Founded' }
+                ].map((col) => (
+                    <th key={col.key} className="px-6 py-4 font-medium">
+                      <button
+                          onClick={() => handleSort(col.key as keyof Team)}
+                          className="flex items-center gap-1 hover:text-white transition-colors"
+                      >
+                        {col.label}
+                        <ArrowUpDown className="w-3 h-3" />
+                      </button>
+                    </th>
+                ))}
+                <th className="px-6 py-4 text-right">Actions</th>
+              </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+              <AnimatePresence>
+                {loading ? (
+                    <tr><td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500" /></td></tr>
+                ) : sortedTeams.length === 0 ? (
+                    <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">No teams found.</td></tr>
+                ) : (
+                    sortedTeams.map((team, index) => (
+                        <motion.tr
+                            key={team.id || index}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="hover:bg-white/5 transition-colors group"
+                        >
+                          <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center border border-white/10 shadow-inner">
+                              <Trophy className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div>
+                              <div className="font-semibold">{team.name}</div>
+                              <div className="text-xs text-muted-foreground font-normal">ID: #{team.id}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-md text-xs font-medium border ${getSportColor(team.sport)}`}>
+                          {team.sport}
+                        </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <User className="w-4 h-4 text-muted-foreground" />
+                              {team.coach}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {team.location}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-muted-foreground" />
+                              {team.foundedYear}
+                            </div>
+                          </td>
+
+                          {/* CRUD ACTIONS */}
+                          <td className="px-6 py-4 text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-white">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="bg-[#1a1b1e] border-white/10 text-white">
+                                <DropdownMenuItem onClick={() => openEditModal(team)} className="cursor-pointer hover:bg-white/10">
+                                  <Pencil className="w-4 h-4 mr-2" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDelete(team.id)} className="cursor-pointer text-red-500 hover:bg-red-500/10 hover:text-red-400">
+                                  <Trash2 className="w-4 h-4 mr-2" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </motion.tr>
+                    ))
+                )}
+              </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </motion.div>
   );
 }

@@ -10,262 +10,139 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * JDBC implementation of TeamRepository.
- * Demonstrates CRUD operations using PreparedStatement.
- * This class is in the repository layer - all database logic is here.
- */
 public class TeamRepositoryImpl implements TeamRepository {
-    
+
+    // SQL запросы
+    private static final String INSERT_SQL = "INSERT INTO teams (name, sport, coach, location, founded_year) VALUES (?, ?, ?, ?, ?) RETURNING id";
+    private static final String FIND_ALL = "SELECT * FROM teams ORDER BY name";
+    private static final String FIND_BY_ID = "SELECT * FROM teams WHERE id = ?";
+    private static final String UPDATE_SQL = "UPDATE teams SET name=?, sport=?, coach=?, location=?, founded_year=?, updated_at=CURRENT_TIMESTAMP WHERE id=?";
+    private static final String DELETE_SQL = "DELETE FROM teams WHERE id=?";
+
+    // Поиск
+    private static final String FIND_BY_SPORT = "SELECT * FROM teams WHERE sport = ?";
+    private static final String FIND_BY_LOCATION = "SELECT * FROM teams WHERE location = ?";
+    private static final String FIND_BY_COACH = "SELECT * FROM teams WHERE coach = ?";
+    private static final String SEARCH_BY_NAME = "SELECT * FROM teams WHERE name ILIKE ?";
+
     @Override
-    public Team save(Team entity) {
-        String sql = "INSERT INTO teams (name, sport, coach, location, founded_year, created_at, updated_at) " +
-                     "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, entity.getName());
-            stmt.setString(2, entity.getSport());
-            stmt.setString(3, entity.getCoach());
-            stmt.setString(4, entity.getLocation());
-            stmt.setObject(5, entity.getFoundedYear(), Types.INTEGER);
-            
+    public Team save(Team team) {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(INSERT_SQL)) {
+
+            stmt.setString(1, team.getName());
+            stmt.setString(2, team.getSport());
+            stmt.setString(3, team.getCoach());
+            stmt.setString(4, team.getLocation());
+            stmt.setInt(5, team.getFoundedYear()); // Используем getFoundedYear
+
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
-                entity.setId(rs.getLong("id"));
+                team.setId(rs.getInt("id")); // ВАЖНО: getInt, а не getLong
             }
-            
-            return entity;
-            
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to save team: " + e.getMessage(), e);
+            throw new RuntimeException("Error saving team", e);
         }
+        return team;
     }
-    
+
     @Override
-    public Optional<Team> findById(Long id) {
-        String sql = "SELECT * FROM teams WHERE id = ?";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setLong(1, id);
+    public Optional<Team> findById(Integer id) {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(FIND_BY_ID)) {
+
+            stmt.setInt(1, id);
             ResultSet rs = stmt.executeQuery();
-            
             if (rs.next()) {
-                return Optional.of(mapResultSetToTeam(rs));
+                return Optional.of(mapRow(rs));
             }
-            
-            return Optional.empty();
-            
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to find team by id: " + e.getMessage(), e);
+            e.printStackTrace();
         }
+        return Optional.empty();
     }
-    
+
     @Override
     public List<Team> findAll() {
-        String sql = "SELECT * FROM teams ORDER BY name";
         List<Team> teams = new ArrayList<>();
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
-            
+        try (Connection conn = DBConnection.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(FIND_ALL)) {
             while (rs.next()) {
-                teams.add(mapResultSetToTeam(rs));
+                teams.add(mapRow(rs));
             }
-            
-            return teams;
-            
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to find all teams: " + e.getMessage(), e);
+            e.printStackTrace();
         }
+        return teams;
     }
-    
+
     @Override
-    public Team update(Team entity) {
-        String sql = "UPDATE teams SET name = ?, sport = ?, coach = ?, location = ?, " +
-                     "founded_year = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, entity.getName());
-            stmt.setString(2, entity.getSport());
-            stmt.setString(3, entity.getCoach());
-            stmt.setString(4, entity.getLocation());
-            stmt.setObject(5, entity.getFoundedYear(), Types.INTEGER);
-            stmt.setLong(6, entity.getId());
-            
-            int rowsAffected = stmt.executeUpdate();
-            if (rowsAffected == 0) {
-                throw new EntityNotFoundException("Team", entity.getId());
+    public Team update(Team team) {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(UPDATE_SQL)) {
+
+            stmt.setString(1, team.getName());
+            stmt.setString(2, team.getSport());
+            stmt.setString(3, team.getCoach());
+            stmt.setString(4, team.getLocation());
+            stmt.setInt(5, team.getFoundedYear());
+            stmt.setInt(6, team.getId());
+
+            int rows = stmt.executeUpdate();
+            if (rows == 0) {
+                throw new EntityNotFoundException("Team", team.getId());
             }
-            
-            return entity;
-            
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to update team: " + e.getMessage(), e);
+            e.printStackTrace();
         }
+        return team;
     }
-    
+
     @Override
-    public boolean deleteById(Long id) {
-        String sql = "DELETE FROM teams WHERE id = ?";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setLong(1, id);
-            int rowsAffected = stmt.executeUpdate();
-            return rowsAffected > 0;
-            
+    public boolean deleteById(Integer id) {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(DELETE_SQL)) {
+            stmt.setInt(1, id);
+            return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to delete team: " + e.getMessage(), e);
+            e.printStackTrace();
+            return false;
         }
     }
-    
-    @Override
-    public boolean existsById(Long id) {
-        String sql = "SELECT 1 FROM teams WHERE id = ?";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setLong(1, id);
-            ResultSet rs = stmt.executeQuery();
-            return rs.next();
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to check team existence: " + e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public long count() {
-        String sql = "SELECT COUNT(*) FROM teams";
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
-            
-            if (rs.next()) {
-                return rs.getLong(1);
-            }
-            return 0;
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to count teams: " + e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public List<Team> findBySport(String sport) {
-        String sql = "SELECT * FROM teams WHERE sport = ? ORDER BY name";
-        List<Team> teams = new ArrayList<>();
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, sport);
-            ResultSet rs = stmt.executeQuery();
-            
-            while (rs.next()) {
-                teams.add(mapResultSetToTeam(rs));
-            }
-            
-            return teams;
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to find teams by sport: " + e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public List<Team> findByLocation(String location) {
-        String sql = "SELECT * FROM teams WHERE location = ? ORDER BY name";
-        List<Team> teams = new ArrayList<>();
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, location);
-            ResultSet rs = stmt.executeQuery();
-            
-            while (rs.next()) {
-                teams.add(mapResultSetToTeam(rs));
-            }
-            
-            return teams;
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to find teams by location: " + e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public List<Team> findByCoach(String coach) {
-        String sql = "SELECT * FROM teams WHERE coach = ? ORDER BY name";
-        List<Team> teams = new ArrayList<>();
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, coach);
-            ResultSet rs = stmt.executeQuery();
-            
-            while (rs.next()) {
-                teams.add(mapResultSetToTeam(rs));
-            }
-            
-            return teams;
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to find teams by coach: " + e.getMessage(), e);
-        }
-    }
-    
+
+    // Реализация методов поиска
+    @Override public List<Team> findBySport(String sport) { return executeQuery(FIND_BY_SPORT, sport); }
+    @Override public List<Team> findByLocation(String location) { return executeQuery(FIND_BY_LOCATION, location); }
+    @Override public List<Team> findByCoach(String coach) { return executeQuery(FIND_BY_COACH, coach); }
+
     @Override
     public List<Team> searchByName(String namePart) {
-        String sql = "SELECT * FROM teams WHERE name ILIKE ? ORDER BY name";
-        List<Team> teams = new ArrayList<>();
-        
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql)) {
-            
-            stmt.setString(1, "%" + namePart + "%");
-            ResultSet rs = stmt.executeQuery();
-            
-            while (rs.next()) {
-                teams.add(mapResultSetToTeam(rs));
-            }
-            
-            return teams;
-            
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to search teams by name: " + e.getMessage(), e);
-        }
+        return executeQuery(SEARCH_BY_NAME, "%" + namePart + "%");
     }
-    
-    /**
-     * Maps a ResultSet row to a Team object.
-     * Helper method to avoid code duplication.
-     */
-    private Team mapResultSetToTeam(ResultSet rs) throws SQLException {
+
+    private List<Team> executeQuery(String sql, String param) {
+        List<Team> list = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, param);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) list.add(mapRow(rs));
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
+    }
+
+    private Team mapRow(ResultSet rs) throws SQLException {
         return new Team.Builder()
-                .id(rs.getLong("id"))
+                .id(rs.getInt("id"))
                 .name(rs.getString("name"))
                 .sport(rs.getString("sport"))
                 .coach(rs.getString("coach"))
                 .location(rs.getString("location"))
-                .foundedYear(rs.getObject("founded_year") != null ? 
-                    rs.getInt("founded_year") : null)
-                .createdAt(rs.getTimestamp("created_at") != null ? 
-                    rs.getTimestamp("created_at").toLocalDateTime() : null)
-                .updatedAt(rs.getTimestamp("updated_at") != null ? 
-                    rs.getTimestamp("updated_at").toLocalDateTime() : null)
+                .foundedYear(rs.getInt("founded_year"))
                 .build();
     }
+
+    @Override public boolean existsById(Integer id) { return findById(id).isPresent(); }
+    @Override public long count() { return findAll().size(); }
 }

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Backend</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; padding: 10px 20px; }
+        pre { background: #f4f4f4; padding: 10px; }
+    </style>
+</head>
+<body>
+<h1>Тест связи с Java Сервером</h1>
+
+<div class="box">
+    <h3>1. Добавить команду (Add Team)</h3>
+    <input type="text" id="teamName" placeholder="Название (Real Madrid)" value="Real Madrid">
+    <input type="text" id="sport" placeholder="Спорт (Football)" value="Football">
+    <input type="text" id="coach" placeholder="Тренер (Ancelotti)" value="Ancelotti">
+    <input type="text" id="location" placeholder="Город (Madrid)" value="Madrid">
+    <input type="number" id="year" placeholder="Год (1902)" value="1902">
+    <button onclick="addTeam()">Отправить в Базу</button>
+</div>
+
+<div class="box">
+    <h3>2. Ответ сервера:</h3>
+    <pre id="responseArea">Здесь появится ответ...</pre>
+</div>
+
+<script>
+    async function addTeam() {
+        const data = {
+            name: document.getElementById('teamName').value,
+            sport: document.getElementById('sport').value,
+            coach: document.getElementById('coach').value,
+            location: document.getElementById('location').value,
+            foundedYear: parseInt(document.getElementById('year').value)
+        };
+
+        try {
+            const response = await fetch('http://localhost:8080/api/teams', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+            document.getElementById('responseArea').textContent = JSON.stringify(result, null, 2);
+
+            if(response.ok) {
+                alert("Ура! Команда сохранена в PostgreSQL!");
+            } else {
+                alert("Ошибка: " + result.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            document.getElementById('responseArea').textContent = "Ошибка соединения! Сервер запущен?";
+        }
+    }
+</script>
+</body>
+</html>
